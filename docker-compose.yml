@@ -1,33 +1,92 @@
 version: '3.8'
 
 services:
-  # 1. Editor Service
-  editor-service:
+  # 1. Uploader Service (Photo Upload + EXIF Extraction)
+  uploader-service:
     build:
       context: .
-      dockerfile: services/editor-service/Dockerfile
+      dockerfile: services/upload-service/Dockerfile
     ports:
       - "8080:8080"
+    env_file:
+      - .env.development
     environment:
       - COSMOS_URI=mongodb://mongodb:27017
       - REDIS_ADDR=redis:6379
     depends_on:
       - mongodb
       - redis
+      - azurite
+    networks:
+      - photo-network
 
-  # 2. MongoDB (Azure Cosmos DB Emulator Alternative)
+  # 2. Gallery Service (Photo Retrieval + Metadata)
+  gallery-service:
+    build:
+      context: .
+      dockerfile: services/read-service/Dockerfile
+    ports:
+      - "8081:8081"
+    env_file:
+      - .env.development
+    environment:
+      - COSMOS_URI=mongodb://mongodb:27017
+      - REDIS_ADDR=redis:6379
+    depends_on:
+      - mongodb
+      - redis
+      - azurite
+    networks:
+      - photo-network
+
+  # 3. Analytics Service (API Call Statistics) 
+  analytics-service:    
+    build:      
+      context: .
+      dockerfile: services/analytics-service/Dockerfile
+    ports:
+     - "8082:8082"
+    environment:
+      - COSMOS_URI=mongodb://mongodb:27017
+      - PORT=8082
+    depends_on:
+      - mongodb
+    networks:
+      - photo-network
+
+  # 4. MongoDB (for photo metadata and user data)
   mongodb:
     image: mongo:latest
     ports:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
+    networks:
+      - photo-network
 
-  # 3. Redis
+
+  # 5. Redis (for caching photo metadata)"
   redis:
     image: redis:alpine
     ports:
       - "6379:6379"
+    networks:
+      - photo-network
+
+ # 6. Azurite (Azure Blob Storage Emulator)
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    command: azurite-blob --blobHost 0.0.0.0 -l /data
+    ports:
+      - "10000:10000"
+    volumes:
+      - ./azurite_data:/data
+    networks:
+      - photo-network
 
 volumes:
   mongo_data:
+
+networks:
+  photo-network:
+    driver: bridge
